@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import time
 from dataclasses import dataclass
@@ -43,7 +44,9 @@ class VLLMServer:
             "--port",
             str(self.config.port),
         ]
-        self._process = subprocess.Popen(command)
+        env = os.environ.copy()
+        env.setdefault("MKL_SERVICE_FORCE_INTEL", "1")
+        self._process = subprocess.Popen(command, env=env)
         try:
             self._wait_until_ready()
         except Exception:
