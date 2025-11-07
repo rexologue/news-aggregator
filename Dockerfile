@@ -44,9 +44,8 @@ ENV MARKET_RADAR_MODEL_CACHE=/app/models \
     HF_HOME=/app/models \
     TRANSFORMERS_CACHE=/app/models \
     SENTENCE_TRANSFORMERS_HOME=/app/models \
-    PORT=8000
+    PORT=8080
 
-EXPOSE 8000
+EXPOSE 8080
 
 ENTRYPOINT ["python", "-m", "market_radar"]
-CMD ["--config", "/app/config.yaml"]

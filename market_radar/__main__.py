@@ -1,55 +1,58 @@
-"""Entrypoint for running the Market Radar API with ``python -m market_radar``."""
+"""Entrypoint for running the news aggregator application."""
 
 from __future__ import annotations
 
-import argparse
-import os
+import logging
 from pathlib import Path
-from typing import Sequence
 
 import uvicorn
 
-from .api import configure_default_config_path
+from .config import load_config
+from .model_server import VLLMServer, VLLMServerConfig
+from .model_worker import ModelWorker
+from .server import create_app
+from .service import NewsAggregator
 
 
-def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    """Parse CLI arguments for launching the API service."""
-
-    parser = argparse.ArgumentParser(description="Run the Market Radar API service")
-    parser.add_argument(
-        "--config",
-        required=True,
-        help="Path to the YAML configuration file used by the pipeline",
+def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
-    parser.add_argument(
-        "--host",
-        default="0.0.0.0",
-        help="Hostname or IP address to bind the API server",
+    config = load_config()
+
+    server_config = VLLMServerConfig(
+        model_name=config.model_name,
+        host=config.model_host,
+        port=config.model_port,
     )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=None,
-        help="Port to bind the API server (defaults to $PORT or 8000)",
-    )
-    return parser.parse_args(argv)
+    vllm_server = VLLMServer(server_config)
+    logging.info("Starting vLLM server for model %s", server_config.model_name)
+    vllm_server.start()
 
+    model_worker = ModelWorker(vllm_server.base_url, config.model_name)
+    model_worker.start()
 
-def main(argv: Sequence[str] | None = None) -> None:
-    """Launch the FastAPI application with Uvicorn."""
+    root = Path(__file__).resolve().parent.parent
+    sources_path = root / "sources.json"
+    aggregator = NewsAggregator(config, model_worker, sources_path)
+    aggregator.start()
 
-    args = parse_args(argv)
-    configure_default_config_path(Path(args.config))
+    app = create_app(aggregator)
 
-    port = args.port if args.port is not None else int(os.getenv("PORT", "8000"))
+    @app.on_event("shutdown")
+    async def _shutdown() -> None:  # pragma: no cover - runtime hook
+        aggregator.stop()
+        model_worker.stop()
+        vllm_server.stop()
 
-    uvicorn.run(
-        "market_radar.api:create_app",
-        host=args.host,
-        port=port,
-        factory=True,
-        reload=False,
-    )
+    logging.info("Starting API server on %s:%s", config.api_host, config.api_port)
+    try:
+        uvicorn.run(app, host=config.api_host, port=config.api_port)
+    finally:
+        aggregator.stop()
+        model_worker.stop()
+        vllm_server.stop()
 
 
 if __name__ == "__main__":  # pragma: no cover

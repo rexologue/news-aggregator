@@ -1,11 +1,14 @@
-"""Market Radar pipeline package."""
+"""News aggregator application package."""
 
-from .config import PipelineConfig
-from .models import Article
-from .orchestrator import NewsPipelineOrchestrator
+from .config import AggregatorConfig, FetcherConfig, TimeWindowConfig, load_config
+from .model_worker import ModelWorker
+from .service import NewsAggregator
 
 __all__ = [
-    "Article",
-    "PipelineConfig",
-    "NewsPipelineOrchestrator",
+    "AggregatorConfig",
+    "FetcherConfig",
+    "TimeWindowConfig",
+    "ModelWorker",
+    "NewsAggregator",
+    "load_config",
 ]

@@ -1,160 +1,115 @@
-"""Configuration models and loaders for the Market Radar pipeline."""
+"""Configuration helpers for the news aggregator service."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import timedelta
 from pathlib import Path
-from typing import Any, Dict, Optional
-
-import yaml
+import os
 
 
 @dataclass
 class TimeWindowConfig:
-    """Configuration for the time window used to collect news."""
+    """Time window configuration for RSS fetching."""
 
-    since: str
-    timezone: Optional[str] = None
+    since: str = "7d"
+
+    def as_timedelta(self) -> timedelta:
+        value = self.since.strip().lower()
+        if not value:
+            raise ValueError("time window 'since' must not be empty")
+        number = ""
+        unit = ""
+        for ch in value:
+            if ch.isdigit():
+                number += ch
+            else:
+                unit += ch
+        if not number or not unit:
+            raise ValueError(f"invalid time window value: {self.since!r}")
+        amount = int(number)
+        unit = unit.strip()
+        mapping = {
+            "s": timedelta(seconds=amount),
+            "m": timedelta(minutes=amount),
+            "h": timedelta(hours=amount),
+            "d": timedelta(days=amount),
+            "w": timedelta(weeks=amount),
+        }
+        if unit not in mapping:
+            raise ValueError(f"unsupported time unit: {unit}")
+        return mapping[unit]
 
 
 @dataclass
 class FetcherConfig:
-    """Configuration for RSS/news fetching."""
+    """Configuration for the RSS fetcher."""
 
     sources_path: Path
     min_chars: int = 400
     max_per_source: int = 200
     concurrency: int = 8
     timeout: int = 30
-    user_agent: str = "market-radar/1.0"
+    user_agent: str = "news-aggregator/1.0"
     feed_retries: int = 2
 
 
 @dataclass
-class DensityConfig:
-    """Configuration for the density estimator."""
+class AggregatorConfig:
+    """Top-level configuration for the service."""
 
-    model_id: str
-    model_cache_dir: Optional[Path] = None
-    title_score: float = 0.7
-    content_score: float = 0.3
-    content_chars: int = 300
-    batch_size: int = 64
-    window_hours: int = 24
-    deduplicate: bool = True
-    deduplication_threshold: float = 0.92
+    fetch_interval_seconds: int = 1800
+    cleanup_interval_seconds: int = 3600
+    retention_window: TimeWindowConfig = field(default_factory=TimeWindowConfig)
+    model_name: str = "Qwen/Qwen3-0.6B"
+    model_port: int = 8001
+    model_host: str = "127.0.0.1"
+    api_host: str = "0.0.0.0"
+    api_port: int = int(os.getenv("PORT", "8080"))
+    summary_max_tokens: int = 256
+    rerank_max_tokens: int = 512
+    summary_max_chars: int = 4000
 
-
-@dataclass
-class SummarizerConfig:
-    """Configuration for the LLM summarizer."""
-
-    model: str
-    temperature: float = 0.2
-    timeout: int = 60
-    api_key: Optional[str] = None
-    fallback_summary: bool = True
+    @property
+    def base_url(self) -> str:
+        return f"http://{self.model_host}:{self.model_port}"
 
 
-@dataclass
-class HotnessWeights:
-    """Weights applied when calculating the final hotness score."""
+def load_config() -> AggregatorConfig:
+    """Load configuration from environment variables with sensible defaults."""
 
-    time: float
-    density: float
-    domain: float
+    fetch_interval = int(os.getenv("FETCH_INTERVAL_SECONDS", "1800"))
+    cleanup_interval = int(os.getenv("CLEANUP_INTERVAL_SECONDS", "3600"))
+    retention = os.getenv("RETENTION_WINDOW", "7d")
+    model_name = os.getenv("MODEL_NAME", "Qwen/Qwen3-0.6B")
+    model_port = int(os.getenv("MODEL_PORT", "8001"))
+    model_host = os.getenv("MODEL_HOST", "127.0.0.1")
+    api_host = os.getenv("API_HOST", "0.0.0.0")
+    api_port = int(os.getenv("PORT", "8080"))
+    summary_max_tokens = int(os.getenv("SUMMARY_MAX_TOKENS", "256"))
+    rerank_max_tokens = int(os.getenv("RERANK_MAX_TOKENS", "512"))
+    summary_max_chars = int(os.getenv("SUMMARY_MAX_CHARS", "4000"))
 
+    retention_window = TimeWindowConfig(since=retention)
 
-@dataclass
-class HotnessConfig:
-    """Configuration of hotness calculation."""
-
-    weights: HotnessWeights
-    time_decay: float = 4.0
-
-
-@dataclass
-class OutputConfig:
-    """Configuration for pipeline output."""
-
-    path: Path
-
-
-@dataclass
-class PipelineConfig:
-    """Root configuration for the orchestrator."""
-
-    time_window: TimeWindowConfig
-    fetcher: FetcherConfig
-    density: DensityConfig
-    summarizer: SummarizerConfig
-    hotness: HotnessConfig
-    output: OutputConfig
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "PipelineConfig":
-        """Instantiate :class:`PipelineConfig` from a raw dictionary."""
-
-        time_window = TimeWindowConfig(**data["time_window"])
-
-        fetcher_cfg_raw = {**data.get("fetcher", {})}
-        if "sources_path" in fetcher_cfg_raw:
-            fetcher_cfg_raw["sources_path"] = Path(fetcher_cfg_raw["sources_path"])
-        fetcher = FetcherConfig(**fetcher_cfg_raw)
-
-        density_cfg_raw = {**data.get("density", {})}
-        if "model_cache_dir" in density_cfg_raw and density_cfg_raw["model_cache_dir"]:
-            density_cfg_raw["model_cache_dir"] = Path(density_cfg_raw["model_cache_dir"])
-        density = DensityConfig(**density_cfg_raw)
-
-        summarizer_cfg_raw = {**data.get("summarizer", {})}
-        summarizer = SummarizerConfig(**summarizer_cfg_raw)
-
-        hotness_raw = {**data.get("hotness", {})}
-        weights_raw = hotness_raw.get("weights", {})
-        weights = HotnessWeights(**weights_raw)
-        hotness_raw["weights"] = weights
-        hotness = HotnessConfig(**hotness_raw)
-
-        output_cfg_raw = {**data.get("output", {})}
-        output_cfg_raw["path"] = Path(output_cfg_raw["path"])
-        output = OutputConfig(**output_cfg_raw)
-
-        return cls(
-            time_window=time_window,
-            fetcher=fetcher,
-            density=density,
-            summarizer=summarizer,
-            hotness=hotness,
-            output=output,
-        )
-
-    @classmethod
-    def from_yaml(cls, path: Path) -> "PipelineConfig":
-        """Load configuration from a YAML file."""
-
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            raise ValueError("YAML config must contain a mapping at the root")
-        return cls.from_dict(data)
-
-    @classmethod
-    def from_yaml_string(cls, content: str) -> "PipelineConfig":
-        """Load configuration from a raw YAML string."""
-
-        data = yaml.safe_load(content)
-        if not isinstance(data, dict):
-            raise ValueError("YAML config must contain a mapping at the root")
-        return cls.from_dict(data)
+    return AggregatorConfig(
+        fetch_interval_seconds=fetch_interval,
+        cleanup_interval_seconds=cleanup_interval,
+        retention_window=retention_window,
+        model_name=model_name,
+        model_port=model_port,
+        model_host=model_host,
+        api_host=api_host,
+        api_port=api_port,
+        summary_max_tokens=summary_max_tokens,
+        rerank_max_tokens=rerank_max_tokens,
+        summary_max_chars=summary_max_chars,
+    )
 
 
 __all__ = [
-    "PipelineConfig",
-    "TimeWindowConfig",
+    "AggregatorConfig",
     "FetcherConfig",
-    "DensityConfig",
-    "SummarizerConfig",
-    "HotnessConfig",
-    "HotnessWeights",
-    "OutputConfig",
+    "TimeWindowConfig",
+    "load_config",
 ]
