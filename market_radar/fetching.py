@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from threading import Lock
-from typing import Callable, Dict, List, Optional, Sequence, Tuple, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import feedparser
 import tldextract
@@ -18,9 +18,6 @@ from newsplease import NewsPlease
 
 from .config import FetcherConfig, TimeWindowConfig
 from .models import Article
-
-if TYPE_CHECKING:
-    from .progress import StageHandle
 
 @dataclass
 class Source:
@@ -237,7 +234,7 @@ class NewsFetcher:
     def fetch(
         self,
         start_time: Optional[datetime] = None,
-        stage: Optional["StageHandle"] = None,
+        stage: Optional[Any] = None,
     ) -> List[Article]:
         """Fetch news articles according to the configured window."""
 

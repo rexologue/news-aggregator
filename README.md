@@ -1,25 +1,25 @@
-# Market Radar
+# News Aggregator
 
-Market Radar is a modular pipeline that collects technology and finance news, scores
-articles for topical density, classifies and summarizes them, and produces a
-ranked "hotness" view for analysts.
+This project runs a GPU-enabled news aggregation service. It continuously parses
+RSS feeds from `sources.json`, generates LLM summaries for the past week's news,
+and exposes an HTTP endpoint that returns the most relevant articles for the
+topics you supply.
 
-## Key components
+## Features
 
-- **Fetcher** – downloads articles from configured RSS feeds, normalises
-  timestamps, and filters out short or duplicate entries. 【F:market_radar/fetching.py†L1-L288】
-- **Density estimator** – embeds titles and article bodies, weights them,
-  compares sources within a rolling window, and gives higher scores to pieces
-  that are unique relative to peers. 【F:market_radar/density_estimator.py†L1-L200】
-- **Summariser** – calls an OpenRouter-compatible chat model (with graceful
-  fallback) to generate Russian summaries and topical categories used as domain
-  weights. 【F:market_radar/summarizer.py†L1-L129】
-- **Hotness calculator** – applies time decay, density and domain weights to
-  compute the final ranking, then min-max normalises the results. 【F:market_radar/hotness.py†L1-L59】
-- **Orchestrator** – wires all components together, writes structured JSON, and
-  can be reused in automation. 【F:market_radar/orchestrator.py†L1-L74】
+- **Automated RSS ingestion** – `market_radar.fetching.NewsFetcher` downloads and
+  normalises articles from the configured agencies. Items older than one week
+  are automatically discarded. 【F:market_radar/fetching.py†L1-L288】
+- **LLM-powered summaries** – A dedicated worker thread interacts with a local
+  vLLM server hosting `Qwen/Qwen3-0.6B` to produce concise, neutral summaries.
+- **Topic-aware reranking** – For every request the service asks the same model
+  to score news items against the provided topics and returns the highest scoring
+  reports.
+- **Single-container deployment** – The Docker image starts both the vLLM server
+  and the FastAPI app. Only the API port is exposed; the model server remains
+  isolated inside the container.
 
-## Installation
+## Running locally
 
 1. Create and activate a Python 3.10+ environment.
 2. Install dependencies:
@@ -28,149 +28,67 @@ ranked "hotness" view for analysts.
    pip install -r requirements.txt
    ```
 
-3. Obtain an [OpenRouter](https://openrouter.ai/) API key if you want to run the
-   LLM summariser and export it as `OPENROUTER_API_KEY`.
+3. Export the environment variables you want to tweak (all optional):
 
-## Configuration
+   - `PORT` – HTTP port for the FastAPI service (default `8080`).
+   - `MODEL_NAME` – Hugging Face model id (default `Qwen/Qwen3-0.6B`).
+   - `MODEL_PORT` – internal port for the vLLM server (default `8001`).
+   - `FETCH_INTERVAL_SECONDS` – delay between RSS refresh cycles (default 1800).
+   - `SUMMARY_MAX_CHARS` – maximum number of characters sent to the LLM for
+     summarisation (default 4000).
 
-The pipeline is configured with a YAML file such as
-[`config.example.yaml`](./config.example.yaml). Each section maps to a dataclass
-in `market_radar.config` and is validated when loaded. 【F:market_radar/config.py†L12-L138】
+4. Start the service:
 
-- `time_window.since` is parsed with `NewsFetcher.parse_since` and controls how
-  far back in time the fetcher looks (e.g. `6h` for six hours). 【F:market_radar/fetching.py†L38-L63】
-- `fetcher` covers RSS details, retries, timeouts, and the path to `sources.json`
-  that lists feed URLs. 【F:market_radar/fetching.py†L70-L287】
-- `density` configures the embedding model, weighting between title and body,
-  the amount of body text retained, and the hourly window used for
-  cross-article comparisons. 【F:market_radar/density_estimator.py†L43-L199】
-- `summarizer` sets the OpenRouter model parameters and controls whether the
-  heuristic fallback summary is allowed. 【F:market_radar/summarizer.py†L17-L125】
-- `hotness` defines the relative weights for time, density, and domain
-  components as well as the exponential time decay factor. 【F:market_radar/hotness.py†L11-L65】
-- `output.path` points to the JSON file that the orchestrator writes. 【F:market_radar/orchestrator.py†L53-L76】
+   ```bash
+   python -m market_radar
+   ```
 
-Copy the example file and adjust it for your feeds:
+The process launches the vLLM server, waits for it to finish downloading the
+model, starts the summarisation worker, and finally exposes the FastAPI app.
 
-```bash
-cp config.example.yaml config.yaml
-```
+### Querying the API
 
-## How scoring works
-
-1. **Fetching and time logic** – For every RSS source, the fetcher retries on
-   transient errors, deduplicates links, and discards articles published before
-   the computed cutoff (`now - since`). Articles retain their best timestamp
-   (published date when available or crawl time) which feeds later stages.
-   【F:market_radar/fetching.py†L70-L287】【F:market_radar/models.py†L10-L34】
-2. **Density computation** – Titles and cleaned article bodies are encoded with
-   a Sentence Transformer. Their cosine-normalised embeddings are weighted using
-   `title_score` and `content_score`, grouped into rolling windows, and scored by
-   measuring how different each article is from others from different sources.
-   Higher uniqueness produces higher density coefficients. 【F:market_radar/density_estimator.py†L14-L199】
-3. **Summaries and domain weights** – The summariser enforces a strict output
-   schema, maps the returned category to predefined weights, and falls back to a
-   heuristic summary when the model is unavailable. The category weight becomes
-   `domain_coef`. 【F:market_radar/summarizer.py†L21-L125】
-4. **Time-aware hotness** – For each article the calculator derives a time
-   coefficient using an exponential decay bounded to the configured window. It
-   then combines time, density, and domain components with configured weights
-   and normalises scores to `[0, 1]`. 【F:market_radar/hotness.py†L13-L65】
-5. **Output** – The orchestrator attaches all coefficients, sorts by hotness,
-   and writes prettified JSON to the configured location. 【F:market_radar/orchestrator.py†L32-L76】
-
-## Example usage
-
-An executable helper is provided in [`examples/run_pipeline.py`](./examples/run_pipeline.py).
-It loads a configuration file, runs the orchestrator, and prints the location of
-the generated JSON report. 【F:examples/run_pipeline.py†L1-L38】
+Send a POST request to `/news` with a JSON body containing the topics list and
+the number of articles you want back:
 
 ```bash
-python examples/run_pipeline.py --config config.yaml
+curl -X POST "http://localhost:8080/news" \
+  -H "Content-Type: application/json" \
+  -d '{"topics": ["inflation", "bank earnings"], "top_n": 5}'
 ```
 
-## HTTP API
+The response is an array of reports where each entry contains the agency id,
+title, summary, base64-encoded image (if available), publication timestamp, and
+the canonical URL.
 
-The project ships with a FastAPI wrapper that exposes the pipeline over HTTP.
-It accepts query parameters to override key configuration values on demand and
-returns the ranked articles as JSON.
+## Docker & Compose
 
-### Run locally
+A CUDA-enabled Dockerfile and a Compose definition are provided for running the
+service on an NVIDIA host.
 
 ```bash
-python -m market_radar --config $(pwd)/config.yaml --port 8000
+docker compose up --build
 ```
 
-Send a request to trigger the pipeline:
+The container downloads the Qwen model on the first run. Subsequent launches
+reuse the cache stored inside the image layer. Only the application port
+configured via `PORT` is published.
 
-```bash
-curl -X POST \
-  "http://localhost:8000/pipeline?&since=6h" \
-  --output output.json
-```
+## Architecture overview
 
-Available query parameters:
-
-- `--output` – **required**, specifies where the generated JSON report is written.
-- `since` – optional override for `time_window.since` (e.g. `6h`).
-
-All other configuration values are sourced exclusively from the YAML file
-provided when the service starts.
-
-Set `MARKET_RADAR_MODEL_CACHE` (or the common `HF_HOME`/`TRANSFORMERS_CACHE`)
-to reuse a persistent cache for Sentence Transformers weights.
-
-### Container image
-
-The repository includes a [`Dockerfile`](./Dockerfile) and helper script for
-building and running the API in a container. To start the service with your
-configuration mounted read-only and the Hugging Face cache persisted on the
-host, execute:
-
-```bash
-PORT=8000 \
-CONFIG_PATH=~/market-radar/config.yaml \
-MODELS_DIR=~/.cache/huggingface \
-./tools/run_api_container.sh
-```
-
-Important environment variables:
-
-- `CONFIG_PATH` – path to the YAML config mounted into the container.
-- `SOURCES_PATH` – optional path to a custom `sources.json` file.
-- `MODELS_DIR` – directory on the host reused as the Hugging Face cache to
-  avoid model re-downloads.
-- `OPENROUTER_API_KEY` – forwarded to the container when present so the
-  summariser can reach OpenRouter.
-- `DO_BUILD=1` – build the Docker image before running it.
-- `DEV=1` – mount the repository into `/app` for live-editing inside the
-  container.
-
-The FastAPI app listens on the port specified via the `PORT` environment
-variable (default `8000`).
-
-## Deployment notes
-
-- **Secrets & credentials** – Store the OpenRouter API key and any feed
-  credentials in your secret manager and expose them as environment variables at
-  runtime. The summariser automatically reads `OPENROUTER_API_KEY`. 【F:market_radar/summarizer.py†L33-L81】
-- **Model caching** – Set `density.model_cache_dir` to a writable volume so that
-  Sentence Transformer weights persist across runs. 【F:market_radar/density_estimator.py†L43-L73】
-- **Scheduling** – Run the example script (or your own wrapper around
-  `NewsPipelineOrchestrator`) from cron, Airflow, or another scheduler to keep
-  the report up to date.
-- **Containerisation** – Package the project into a container, mount the config
-  file and sources list, and ensure outbound HTTPS access for RSS feeds and the
-  OpenRouter API.
-- **Monitoring** – Capture stdout/stderr from the fetcher and summariser to
-  detect repeated failures; consider plugging in a logging handler in production.
-- **Outputs** – Serve the generated JSON through your API or upload it to a
-  storage bucket/CDN as part of your deployment job. The file is overwritten on
-  each run, so version it if historical snapshots are required.
+- `market_radar/model_server.py` starts and supervises the vLLM process, waiting
+  until the OpenAI-compatible HTTP interface reports healthy before continuing.
+- `market_radar/model_worker.py` owns a single background thread that serialises
+  all CUDA-bound requests. Summaries and reranking prompts are pushed onto a
+  queue and executed sequentially to avoid multithreading issues.
+- `market_radar/service.py` orchestrates RSS fetching, summary generation, image
+  downloads, retention cleanup, and reranking.
+- `market_radar/server.py` wires the FastAPI application with the aggregation
+  service.
 
 ## Development tips
 
-- Use `python -m compileall market_radar examples` to perform a quick syntax
-  check locally.
-- When iterating on the fetcher, reduce `fetcher.max_per_source` and shorten the
-  time window for faster cycles.
+- `python -m compileall market_radar` performs a quick syntax check.
+- Environment variables make it easy to shorten the fetch interval or adjust
+  summarisation limits when iterating locally.
+- Logs include detailed information about fetch cycles and reranking fallbacks.

@@ -1,0 +1,18 @@
+version: "3.9"
+
+services:
+  news-aggregator:
+    build: .
+    image: news-aggregator:latest
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      PORT: "${PORT:-8080}"
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

@@ -11,3 +11,4 @@ numpy
 httpx
 fastapi
 uvicorn[standard]
+vllm>=0.4.0
