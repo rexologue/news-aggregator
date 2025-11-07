@@ -1,0 +1,13 @@
+news-please
+feedparser
+python-dateutil
+pytz
+tldextract
+charset-normalizer
+tqdm
+rich
+sentence-transformers>=3.0.1
+numpy
+httpx
+fastapi
+uvicorn[standard]

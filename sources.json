@@ -1,0 +1,93 @@
+[
+  {
+    "id": "kommersant_finance",
+    "type": "rss",
+    "timezone": "Europe/Moscow",
+    "outfile": "kommersant_finance.json",
+    "urls": [
+      "https://www.kommersant.ru/RSS/money.xml",
+      "https://www.kommersant.ru/RSS/section-economics.xml",
+      "https://www.kommersant.ru/RSS/section-business.xml"
+    ]
+  },
+  {
+    "id": "vedomosti_finance",
+    "type": "rss",
+    "timezone": "Europe/Moscow",
+    "outfile": "vedomosti_finance.json",
+    "urls": [
+      "https://www.vedomosti.ru/rss/rubric/business.xml",
+      "https://www.vedomosti.ru/rss/rubric/economics.xml",
+      "https://www.vedomosti.ru/rss/rubric/finance.xml"
+    ]
+  },
+  {
+    "id": "moex_news",
+    "type": "rss",
+    "timezone": "Europe/Moscow",
+    "outfile": "moex_news.json",
+    "urls": [
+      "https://moex.com/export/news.aspx?cat=100",
+      "https://moex.com/export/news.aspx?cat=101",
+      "https://moex.com/export/news.aspx?cat=102"
+    ]
+  },
+  {
+    "id": "cbr_press",
+    "type": "rss",
+    "timezone": "Europe/Moscow",
+    "outfile": "cbr_press.json",
+    "urls": [
+      "http://www.cbr.ru/rss/RssPress",
+      "http://www.cbr.ru/rss/eventrss"
+    ]
+  },
+  {
+    "id": "fed_press",
+    "type": "rss",
+    "timezone": "America/New_York",
+    "outfile": "fed_press.json",
+    "urls": [
+      "https://www.federalreserve.gov/feeds/press_all.xml",
+      "https://www.federalreserve.gov/feeds/press_monetary.xml"
+    ]
+  },
+  {
+    "id": "boe_news",
+    "type": "rss",
+    "timezone": "Europe/London",
+    "outfile": "boe_news.json",
+    "urls": [
+      "https://www.bankofengland.co.uk/rss/news"
+    ]
+  },
+  {
+    "id": "investing_com",
+    "type": "rss",
+    "timezone": "Europe/Moscow",
+    "outfile": "investing_com.json",
+    "urls": [
+      "https://ru.investing.com/rss/stock.rss",
+      "https://ru.investing.com/rss/market_overview.rss",
+      "https://ru.investing.com/rss/302.rss",
+      "https://ru.investing.com/rss/commodities.rss",
+      "https://ru.investing.com/rss/bonds.rss",
+      "https://ru.investing.com/rss/central_banks.rss",
+      "https://ru.investing.com/rss/news.rss"
+    ]
+  },
+  {
+    "id": "finam",
+    "type": "rss",
+    "timezone": "Europe/Moscow",
+    "outfile": "finam.json",
+    "urls": [
+      "https://www.finam.ru/analysis/conews/rsspoint/",
+      "https://www.finam.ru/analysis/nslent/rsspoint/",
+      "https://www.finam.ru/analysis/forecasts/rsspoint/",
+      "https://www.finam.ru/international/advanced/rsspoint/",
+      "https://www.finam.ru/analytics/rsspoint/",
+      "http://bonds.finam.ru/news/today/rss.asp"
+    ]
+  }
+]
