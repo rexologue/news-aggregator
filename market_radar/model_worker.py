@@ -87,7 +87,6 @@ class ModelWorker:
                 "content": (
                     "Ты — помощник, который составляет краткие сводки новостей. "
                     "Отвечай только на русском языке. "
-                    "Если тебе нужны рассуждения, помести их в тег <think>. "
                     "Всегда возвращай итог строго в формате тегов: <summary>...</summary>. "
                     "Текст внутри <summary> должен быть одним абзацем до пяти предложений, "
                     "если получится чуть больше — это не критично. "
@@ -126,8 +125,7 @@ class ModelWorker:
         payload = "\n\n".join(formatted)
         instructions = (
             "You are ranking financial and business news. Given the list of topics and candidate "
-            "articles, assign each article a relevance score between 0 and 1. If you need "
-            "deliberation, wrap it in a <think> tag. Respond only with tags in the format "
+            "articles, assign each article a relevance score between 0 and 1. Respond only with tags in the format "
             "<scores><item index=\"N\">SCORE</item>...</scores>. Do not include any other text or "
             "tags outside of <scores>."
         )
