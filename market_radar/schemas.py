@@ -44,4 +44,10 @@ class ReportResponse(BaseModel):
         )
 
 
-__all__ = ["RankingRequest", "ReportResponse"]
+class RebuildResponse(BaseModel):
+    rebuilt: int = Field(
+        ..., description="Total number of reports available after a rebuild operation"
+    )
+
+
+__all__ = ["RankingRequest", "ReportResponse", "RebuildResponse"]
