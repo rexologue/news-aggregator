@@ -104,6 +104,18 @@ class NewsAggregator:
         if after != before:
             LOGGER.info("Removed %d stale reports", before - after)
 
+    def rebuild_reports(self) -> int:
+        """Clear all cached reports and rebuild them from scratch."""
+
+        LOGGER.info("Manual rebuild of all reports requested")
+        with self._lock:
+            self._reports.clear()
+        self.refresh_news()
+        with self._lock:
+            rebuilt = len(self._reports)
+        LOGGER.info("Rebuild complete with %d reports", rebuilt)
+        return rebuilt
+
     def _process_article(self, article: Article) -> None:
         if article.content is None and not article.extras.get("newsplease", {}).get("description"):
             return

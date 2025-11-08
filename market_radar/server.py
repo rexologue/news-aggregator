@@ -6,7 +6,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from .service import NewsAggregator
-from .schemas import RankingRequest, ReportResponse
+from .schemas import RankingRequest, ReportResponse, RebuildResponse
 
 
 def create_app(aggregator: NewsAggregator) -> FastAPI:
@@ -34,6 +34,11 @@ def create_app(aggregator: NewsAggregator) -> FastAPI:
             raise HTTPException(status_code=400, detail="topics list must not be empty")
         reports = service.top_reports(request.topics, request.top_n)
         return [ReportResponse.from_report(report) for report in reports]
+
+    @app.post("/reports/rebuild", response_model=RebuildResponse)
+    def rebuild_reports(service: NewsAggregator = Depends(get_aggregator)) -> RebuildResponse:
+        rebuilt = service.rebuild_reports()
+        return RebuildResponse(rebuilt=rebuilt)
 
     return app
 

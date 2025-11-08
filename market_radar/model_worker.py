@@ -79,25 +79,31 @@ class ModelWorker:
         content: str,
         max_tokens: int,
     ) -> str:
-        header = title or "Untitled article"
+        header = title or "Без названия"
         messages = [
             {
                 "role": "system",
                 "content": (
-                    "You are a helpful assistant creating concise summaries of news articles. "
-                    "Write in a neutral tone and focus on the key facts."
+                    "Ты — помощник, который составляет краткие сводки новостей. "
+                    "Отвечай только на русском языке. "
+                    "Всегда возвращай результат строго в формате JSON с ключом \"summary\", "
+                    "содержащим список предложений. "
+                    "Каждое предложение должно быть информативным и отражать ключевые факты. "
+                    "Всего предложений должно быть не более пяти. Не добавляй других полей."
                 ),
             },
             {
                 "role": "user",
                 "content": (
-                    "Summarize the following article in no more than five sentences.\n"
-                    f"Title: {header}\n\n"
-                    f"Article:\n{content}\n"
+                    "Сформируй сводку по следующей статье.\n"
+                    f"Заголовок: {header}\n\n"
+                    f"Текст статьи:\n{content}\n\n"
+                    "Верни только JSON."
                 ),
             },
         ]
-        return self._submit(messages, max_tokens=max_tokens, temperature=0.2)
+        response = self._submit(messages, max_tokens=max_tokens, temperature=0.2)
+        return self._parse_summary(response)
 
     def rerank(
         self,
@@ -163,6 +169,31 @@ class ModelWorker:
         if not scores:
             raise ValueError("No valid scores produced by the model")
         return scores
+
+    @staticmethod
+    def _parse_summary(text: str) -> str:
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            start = text.find("{")
+            end = text.rfind("}")
+            if start == -1 or end == -1 or end <= start:
+                raise ValueError("Model response did not contain valid JSON summary")
+            data = json.loads(text[start : end + 1])
+        summary_raw = data.get("summary")
+        if isinstance(summary_raw, list):
+            sentences = [
+                sentence.strip()
+                for sentence in summary_raw
+                if isinstance(sentence, str) and sentence.strip()
+            ]
+        elif isinstance(summary_raw, str):
+            sentences = [summary_raw.strip()] if summary_raw.strip() else []
+        else:
+            sentences = []
+        if not sentences:
+            raise ValueError("Model response missing summary content")
+        return "\n".join(sentences)
 
 
 __all__ = ["ModelWorker"]
