@@ -87,19 +87,18 @@ class ModelWorker:
                 "content": (
                     "Ты — помощник, который составляет краткие сводки новостей. "
                     "Отвечай только на русском языке. "
-                    "Всегда возвращай итог строго в формате тегов: <summary>...</summary>. "
-                    "Текст внутри <summary> должен быть одним абзацем до пяти предложений, "
-                    "если получится чуть больше — это не критично. "
-                    "Не добавляй никаких других тегов или текста вне <summary>."
+                    "Ответ должен содержать исключительно текст краткой сводки (summary) и ничего больше: "
+                    "никаких тегов, служебных пометок, пояснений или рассуждений. "
+                    "Сводка должна быть одним абзацем до пяти предложений, если получится чуть больше — это не критично."
                 ),
             },
             {
                 "role": "user",
                 "content": (
-                    "Сформируй сводку по следующей статье.\n"
+                    "Сформируй краткую сводку по следующей статье.\n"
                     f"Заголовок: {header}\n\n"
                     f"Текст статьи:\n{content}\n\n"
-                    "Верни только требуемые теги."
+                    "Верни только текст сводки, без каких-либо дополнительных комментариев."
                 ),
             },
         ]
@@ -123,17 +122,20 @@ class ModelWorker:
                 f"[{idx}] Title: {report.title or 'Untitled'}\nSummary: {report.summary}"
             )
         payload = "\n\n".join(formatted)
+
         instructions = (
-            "You are ranking financial and business news. Given the list of topics and candidate "
-            "articles, assign each article a relevance score between 0 and 1. Respond only with tags in the format "
-            "<scores><item index=\"N\">SCORE</item>...</scores>. Do not include any other text or "
-            "tags outside of <scores>."
+            "You are ranking financial and business news articles by relevance to the given topics. "
+            "Each article is labeled with a 1-based index in square brackets, like [1], [2], etc. "
+            "Your task is to order ALL article indices from most relevant to least relevant. "
+            "Respond ONLY with the indices of the articles in the desired order, using their numeric form "
+            "(for example: '2 1 3 4' or '2, 1, 3, 4'). "
+            "Do not include any additional text, explanations, reasoning, tags or comments in your answer."
         )
         user = (
             f"Topics: {topic_list}\n\n"
             "Articles:\n"
             f"{payload}\n\n"
-            "Return the tagged result now."
+            "Return only the ordered list of article indices."
         )
         messages = [
             {"role": "system", "content": instructions},
@@ -144,80 +146,103 @@ class ModelWorker:
 
     @staticmethod
     def _parse_scores(text: str, count: int) -> Dict[str, float]:
+        """
+        Parse a ranking from the model response.
+
+        The model is instructed to return only article indices (1..count) in the
+        order of relevance. Here мы:
+
+        1. Удаляем <think>...</think>, если они есть.
+        2. Вытаскиваем все числа из текста в порядке появления.
+        3. Фильтруем по диапазону [1, count] и убираем дубликаты, сохраняя первый порядок.
+        4. Превращаем позиции в псевдо-скоры в диапазоне (0, 1], чтобы не ломать
+           внешний интерфейс Dict[str, float] (чем выше в списке, тем выше score).
+        """
         cleaned = _strip_think_tags(text)
-        tag_scores = {}
-        summary_match = re.search(r"<scores>(.*?)</scores>", cleaned, flags=re.DOTALL | re.IGNORECASE)
-        if summary_match:
-            body = summary_match.group(1)
-            for match in re.finditer(
-                r"<item\s+index=\"(\d+)\">\s*([0-9]*\.?[0-9]+)\s*</item>",
-                body,
-                flags=re.DOTALL | re.IGNORECASE,
-            ):
-                idx = int(match.group(1))
-                score = float(match.group(2))
-                if 1 <= idx <= count:
-                    tag_scores[str(idx)] = score
-        if tag_scores:
-            return tag_scores
-        text = cleaned
+        cleaned = cleaned.strip()
+        if not cleaned:
+            raise ValueError("Model response is empty after stripping think tags")
+
+        # Попробуем на всякий случай выдернуть, если кто-то вдруг обернул в JSON
+        # (но мы больше этого не требуем).
+        # Если этовалидный JSON с полем scores, сохраним обратную совместимость.
         try:
-            data = json.loads(text)
+            data = json.loads(cleaned)
         except json.JSONDecodeError:
-            start = text.find("{")
-            end = text.rfind("}")
-            if start == -1 or end == -1 or end <= start:
-                raise ValueError("Model response did not contain valid JSON")
-            data = json.loads(text[start : end + 1])
-        scores_raw = data.get("scores")
-        if not isinstance(scores_raw, list):
-            raise ValueError("Model response missing 'scores' list")
+            data = None
+
+        if isinstance(data, dict) and "scores" in data:
+            scores_raw = data.get("scores")
+            scores: Dict[str, float] = {}
+            if isinstance(scores_raw, list):
+                for entry in scores_raw:
+                    if not isinstance(entry, dict):
+                        continue
+                    index = entry.get("index")
+                    score = entry.get("score")
+                    if (
+                        isinstance(index, int)
+                        and isinstance(score, (int, float))
+                        and 1 <= index <= count
+                    ):
+                        scores[str(index)] = float(score)
+            if scores:
+                return scores
+
+        # Основной путь: текст содержит только индексы (например: "2 1 3 4" или "2,1,3,4").
+        indices: List[int] = []
+        for match in re.finditer(r"\d+", cleaned):
+            idx = int(match.group(0))
+            if 1 <= idx <= count and idx not in indices:
+                indices.append(idx)
+
+        if not indices:
+            raise ValueError("Model response did not contain any valid indices")
+
+        # Преобразуем ранги в псевдо-скоры (монотонно убывающие).
+        # Первый (самый релевантный) получает 1.0, последний — 1/n.
+        n = len(indices)
         scores: Dict[str, float] = {}
-        for entry in scores_raw:
-            if not isinstance(entry, dict):
-                continue
-            index = entry.get("index")
-            score = entry.get("score")
-            if not isinstance(index, int):
-                continue
-            if not isinstance(score, (int, float)):
-                continue
-            if 1 <= index <= count:
-                scores[str(index)] = float(score)
-        if not scores:
-            raise ValueError("No valid scores produced by the model")
+        for rank, idx in enumerate(indices):
+            score = float(n - rank) / float(n)
+            scores[str(idx)] = score
+
         return scores
 
     @staticmethod
     def _parse_summary(text: str) -> str:
+        """
+        Берём ответ модели, вырезаем <think>...</think>, убираем лишние пробелы.
+        Если модель вдруг вернула <summary>...</summary>, аккуратно достанем тело,
+        но это не обязательно.
+        """
         cleaned = _strip_think_tags(text)
-        summary_match = re.search(r"<summary>(.*?)</summary>", cleaned, flags=re.DOTALL | re.IGNORECASE)
+        cleaned = cleaned.strip()
+        if not cleaned:
+            raise ValueError("Model response missing summary content")
+
+        # Если вдруг всё ещё используются теги <summary>...</summary>, поддержим это.
+        summary_match = re.search(
+            r"<summary>(.*?)</summary>",
+            cleaned,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
         if summary_match:
-            body = summary_match.group(1)
-            sentences = [
-                match.group(1).strip()
-                for match in re.finditer(r"<item>(.*?)</item>", body, flags=re.DOTALL | re.IGNORECASE)
-                if match.group(1).strip()
-            ]
-            if sentences:
-                return "\n".join(sentences)
-            cleaned_body = re.sub(r"[ \t]{2,}", " ", body)
-            cleaned_body = re.sub(r"\s*\n\s*", "\n", cleaned_body)
-            cleaned_body = cleaned_body.strip()
-            if cleaned_body:
-                return cleaned_body
-        text = cleaned
-        fallback = re.sub(r"\s+", " ", cleaned).strip()
-        if fallback:
-            # Provide a graceful fallback for unexpected but well-formed plain text
-            # responses instead of insisting on JSON, which the current prompt no
-            # longer requests. This keeps legacy summaries usable while ensuring
-            # we remain tolerant to minor formatting deviations.
-            return fallback
-        raise ValueError("Model response missing summary content")
+            cleaned = summary_match.group(1).strip()
+
+        # Нормализуем пробелы: в одну строку/абзац.
+        cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+        cleaned = re.sub(r"\s*\n\s*", " ", cleaned)
+        cleaned = cleaned.strip()
+
+        if not cleaned:
+            raise ValueError("Model response missing summary content")
+
+        return cleaned
 
 
 def _strip_think_tags(text: str) -> str:
+    """Remove <think>...</think> blocks that the model may add for reasoning."""
     return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
 
 
