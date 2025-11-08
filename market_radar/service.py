@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import threading
 import time
@@ -35,6 +36,9 @@ class NewsAggregator:
             raise FileNotFoundError(f"sources.json not found at {sources_path}")
         self.sources_path = sources_path
         self._reports: Dict[str, NewsReport] = {}
+        self._cache_path = self.config.cache_path
+        self._cache_path.parent.mkdir(parents=True, exist_ok=True)
+        self._last_refresh: Optional[datetime] = None
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self._fetch_thread = threading.Thread(target=self._fetch_loop, daemon=True)
@@ -43,6 +47,7 @@ class NewsAggregator:
 
         fetcher_cfg = FetcherConfig(sources_path=sources_path)
         self._fetcher = NewsFetcher(fetcher_cfg, TimeWindowConfig(since=config.retention_window.since))
+        self._load_cached_reports()
 
     def start(self) -> None:
         LOGGER.info("Starting news aggregator service")
@@ -57,6 +62,7 @@ class NewsAggregator:
         self._fetch_thread.join(timeout=5)
         self._cleanup_thread.join(timeout=5)
         self._http_client.close()
+        self._save_cached_reports()
 
     def _initial_refresh(self) -> None:
         try:
@@ -85,11 +91,14 @@ class NewsAggregator:
 
     def refresh_news(self) -> None:
         LOGGER.info("Refreshing news feeds")
-        articles = self._fetcher.fetch()
+        cutoff = self._last_refresh
+        articles = self._fetcher.fetch(cutoff=cutoff)
         LOGGER.info("Fetched %d articles", len(articles))
         for article in articles:
             self._process_article(article)
+        self._last_refresh = datetime.now(timezone.utc)
         self.remove_stale_reports()
+        self._save_cached_reports()
 
     def remove_stale_reports(self) -> None:
         cutoff = datetime.now(timezone.utc) - self.config.retention_window.as_timedelta()
@@ -103,6 +112,7 @@ class NewsAggregator:
             after = len(self._reports)
         if after != before:
             LOGGER.info("Removed %d stale reports", before - after)
+            self._save_cached_reports()
 
     def rebuild_reports(self) -> int:
         """Clear all cached reports and rebuild them from scratch."""
@@ -193,6 +203,68 @@ class NewsAggregator:
             return reports[:top_n]
         scored.sort(key=lambda item: item[0], reverse=True)
         return [report for _, report in scored[:top_n]]
+
+    def _load_cached_reports(self) -> None:
+        if not self._cache_path.exists():
+            return
+        try:
+            raw = json.loads(self._cache_path.read_text(encoding="utf-8"))
+        except Exception as exc:  # pragma: no cover - corrupted cache
+            LOGGER.warning("Failed to load cached reports: %s", exc)
+            return
+
+        reports: Dict[str, NewsReport] = {}
+        for entry in raw.get("reports", []):
+            try:
+                published = datetime.fromisoformat(entry["published_at"])
+                if published.tzinfo is None:
+                    published = published.replace(tzinfo=timezone.utc)
+                crawled = datetime.fromisoformat(entry["crawled_at"])
+                if crawled.tzinfo is None:
+                    crawled = crawled.replace(tzinfo=timezone.utc)
+                report = NewsReport(
+                    agency=entry["agency"],
+                    title=entry.get("title"),
+                    summary=entry["summary"],
+                    image_base64=entry.get("image_base64"),
+                    url=entry["url"],
+                    published_at=published,
+                    crawled_at=crawled,
+                )
+            except Exception as exc:  # pragma: no cover - invalid entry
+                LOGGER.debug("Skipping invalid cached report: %s", exc)
+                continue
+            reports[report.url] = report
+
+        last_refresh_raw = raw.get("last_refresh")
+        if last_refresh_raw:
+            try:
+                last_refresh = datetime.fromisoformat(last_refresh_raw)
+                if last_refresh.tzinfo is None:
+                    last_refresh = last_refresh.replace(tzinfo=timezone.utc)
+                self._last_refresh = last_refresh
+            except Exception:  # pragma: no cover - invalid timestamp
+                LOGGER.debug("Invalid last_refresh timestamp in cache", exc_info=True)
+
+        with self._lock:
+            self._reports = reports
+
+        self.remove_stale_reports()
+
+    def _save_cached_reports(self) -> None:
+        payload = {
+            "reports": [],
+            "last_refresh": self._last_refresh.isoformat() if self._last_refresh else None,
+        }
+        with self._lock:
+            for report in self._reports.values():
+                payload["reports"].append(report.to_dict())
+        try:
+            self._cache_path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        except Exception:  # pragma: no cover - disk errors
+            LOGGER.warning("Failed to persist cached reports", exc_info=True)
 
 
 __all__ = ["NewsAggregator"]
