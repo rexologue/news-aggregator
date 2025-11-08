@@ -61,6 +61,7 @@ class AggregatorConfig:
     fetch_interval_seconds: int = 1800
     cleanup_interval_seconds: int = 3600
     retention_window: TimeWindowConfig = field(default_factory=TimeWindowConfig)
+    cache_path: Path = Path("data/news_cache.json")
     model_name: str = "Qwen/Qwen3-0.6B"
     model_port: int = 8001
     model_host: str = "127.0.0.1"
@@ -81,6 +82,7 @@ def load_config() -> AggregatorConfig:
     fetch_interval = int(os.getenv("FETCH_INTERVAL_SECONDS", "1800"))
     cleanup_interval = int(os.getenv("CLEANUP_INTERVAL_SECONDS", "3600"))
     retention = os.getenv("RETENTION_WINDOW", "7d")
+    cache_path = Path(os.getenv("CACHE_PATH", "data/news_cache.json"))
     model_name = os.getenv("MODEL_NAME", "Qwen/Qwen3-0.6B")
     model_port = int(os.getenv("MODEL_PORT", "8001"))
     model_host = os.getenv("MODEL_HOST", "127.0.0.1")
@@ -96,6 +98,7 @@ def load_config() -> AggregatorConfig:
         fetch_interval_seconds=fetch_interval,
         cleanup_interval_seconds=cleanup_interval,
         retention_window=retention_window,
+        cache_path=cache_path,
         model_name=model_name,
         model_port=model_port,
         model_host=model_host,

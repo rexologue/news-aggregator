@@ -235,13 +235,25 @@ class NewsFetcher:
         self,
         start_time: Optional[datetime] = None,
         stage: Optional[Any] = None,
+        cutoff: Optional[datetime] = None,
     ) -> List[Article]:
-        """Fetch news articles according to the configured window."""
+        """Fetch news articles according to the configured window.
+
+        When ``cutoff`` is provided, only articles whose timestamps are newer than
+        that value will be considered, enabling incremental updates.
+        """
 
         if start_time is None:
             start_time = datetime.now(timezone.utc)
+        if start_time.tzinfo is None:
+            start_time = start_time.replace(tzinfo=timezone.utc)
         since_td = self.parse_since(self.time_window.since)
-        cutoff = start_time - since_td
+        if cutoff is not None:
+            if cutoff.tzinfo is None:
+                cutoff = cutoff.replace(tzinfo=timezone.utc)
+            cutoff = cutoff.astimezone(timezone.utc)
+        else:
+            cutoff = start_time - since_td
 
         socket.setdefaulttimeout(max(1, self.config.timeout))
 
