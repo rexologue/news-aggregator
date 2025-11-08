@@ -67,9 +67,9 @@ class AggregatorConfig:
     model_host: str = "127.0.0.1"
     api_host: str = "0.0.0.0"
     api_port: int = int(os.getenv("PORT", "8080"))
-    summary_max_tokens: int = 256
+    summary_max_tokens: int = 768
     rerank_max_tokens: int = 512
-    summary_max_chars: int = 4000
+    summary_max_chars: int = 10000
 
     @property
     def base_url(self) -> str:

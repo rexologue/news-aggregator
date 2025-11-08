@@ -85,24 +85,28 @@ class ModelWorker:
             {
                 "role": "system",
                 "content": (
-                    "Ты — помощник, который составляет краткие сводки новостей. "
+                    "Ты — аналитик финансовых и бизнес-новостей. "
                     "Отвечай только на русском языке. "
-                    "Ответ должен содержать исключительно текст краткой сводки (summary) и ничего больше: "
-                    "никаких тегов, служебных пометок, пояснений или рассуждений. "
-                    "Сводка должна быть одним абзацем до пяти предложений, если получится чуть больше — это не критично."
+                    "Для каждой статьи составляй подробную, информативную сводку: "
+                    "кто участники, что произошло, когда, где, какие суммы и масштабы, "
+                    "как связаны события с рынками, компаниями и отраслями, "
+                    "каковы ключевые причины и возможные последствия. "
+                    "Можно использовать несколько абзацев или маркированный список. "
+                    "Ответ должен содержать только текст сводки: "
+                    "без служебных пометок, объяснений твоих действий, тегов или рассуждений."
                 ),
             },
             {
                 "role": "user",
                 "content": (
-                    "Сформируй краткую сводку по следующей статье.\n"
+                    "Сформируй подробную сводку по следующей статье.\n"
                     f"Заголовок: {header}\n\n"
                     f"Текст статьи:\n{content}\n\n"
-                    "Верни только текст сводки, без каких-либо дополнительных комментариев."
+                    "Верни только сводку, без каких-либо дополнительных комментариев."
                 ),
             },
         ]
-        response = self._submit(messages, max_tokens=max_tokens, temperature=0.2)
+        response = self._submit(messages, max_tokens=max_tokens, temperature=0.1)
         return self._parse_summary(response)
 
     def rerank(
@@ -165,7 +169,7 @@ class ModelWorker:
 
         # Попробуем на всякий случай выдернуть, если кто-то вдруг обернул в JSON
         # (но мы больше этого не требуем).
-        # Если этовалидный JSON с полем scores, сохраним обратную совместимость.
+        # Если это валидный JSON с полем scores, сохраним обратную совместимость.
         try:
             data = json.loads(cleaned)
         except json.JSONDecodeError:
@@ -212,16 +216,15 @@ class ModelWorker:
     @staticmethod
     def _parse_summary(text: str) -> str:
         """
-        Берём ответ модели, вырезаем <think>...</think>, убираем лишние пробелы.
-        Если модель вдруг вернула <summary>...</summary>, аккуратно достанем тело,
-        но это не обязательно.
+        Берём ответ модели, вырезаем <think>...</think>, приводим пробелы и переносы строк
+        к аккуратному виду и возвращаем текст сводки. Если модель неожиданно обернула
+        сводку в <summary>...</summary>, извлекаем содержимое, но это не обязательно.
         """
-        cleaned = _strip_think_tags(text)
-        cleaned = cleaned.strip()
+        cleaned = _strip_think_tags(text).strip()
         if not cleaned:
-            raise ValueError("Model response missing summary content")
+            raise ValueError("Model response missing summary content (no <think> </think> tags!)")
 
-        # Если вдруг всё ещё используются теги <summary>...</summary>, поддержим это.
+        # Поддержка старого формата <summary>...</summary>, если он вдруг встретится.
         summary_match = re.search(
             r"<summary>(.*?)</summary>",
             cleaned,
@@ -230,10 +233,11 @@ class ModelWorker:
         if summary_match:
             cleaned = summary_match.group(1).strip()
 
-        # Нормализуем пробелы: в одну строку/абзац.
+        # Нормализуем пробелы и переносы строк:
+        # - несколько пробелов подряд -> один пробел
+        # - лишние пробелы вокруг переводов строк убираем
         cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
-        cleaned = re.sub(r"\s*\n\s*", " ", cleaned)
-        cleaned = cleaned.strip()
+        cleaned = re.sub(r"\s*\n\s*", "\n", cleaned).strip()
 
         if not cleaned:
             raise ValueError("Model response missing summary content")
@@ -242,8 +246,17 @@ class ModelWorker:
 
 
 def _strip_think_tags(text: str) -> str:
-    """Remove <think>...</think> blocks that the model may add for reasoning."""
-    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    """
+    Remove <think>...</think> blocks that the model may add for reasoning.
+
+    Если закрывающего тега </think> нет (генерация оборвалась), вырезаем всё
+    от <think> до конца строки/текста.
+    """
+    pattern = re.compile(
+        r"<think\b[^>]*>.*?(</think>|$)",
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    return pattern.sub("", text)
 
 
 __all__ = ["ModelWorker"]
