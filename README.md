@@ -36,6 +36,10 @@ topics you supply.
    - `FETCH_INTERVAL_SECONDS` – delay between RSS refresh cycles (default 1800).
    - `SUMMARY_MAX_CHARS` – maximum number of characters sent to the LLM for
      summarisation (default 4000).
+  - `VLLM_USE_TORCH_COMPILE` – set to `0` to disable PyTorch compilation if you
+    run on a host without a working compiler toolchain. The provided Docker
+    image includes the required build utilities so compilation is enabled by
+    default.
 
 4. Start the service:
 
