@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import queue
+import re
 import threading
 from concurrent.futures import Future
 from dataclasses import dataclass
@@ -86,10 +87,11 @@ class ModelWorker:
                 "content": (
                     "Ты — помощник, который составляет краткие сводки новостей. "
                     "Отвечай только на русском языке. "
-                    "Всегда возвращай результат строго в формате JSON с ключом \"summary\", "
-                    "содержащим список предложений. "
-                    "Каждое предложение должно быть информативным и отражать ключевые факты. "
-                    "Всего предложений должно быть не более пяти. Не добавляй других полей."
+                    "Если тебе нужны рассуждения, помести их в тег <think>. "
+                    "Всегда возвращай итог строго в формате тегов: <summary>...</summary>. "
+                    "Текст внутри <summary> должен быть одним абзацем до пяти предложений, "
+                    "если получится чуть больше — это не критично. "
+                    "Не добавляй никаких других тегов или текста вне <summary>."
                 ),
             },
             {
@@ -98,7 +100,7 @@ class ModelWorker:
                     "Сформируй сводку по следующей статье.\n"
                     f"Заголовок: {header}\n\n"
                     f"Текст статьи:\n{content}\n\n"
-                    "Верни только JSON."
+                    "Верни только требуемые теги."
                 ),
             },
         ]
@@ -124,15 +126,16 @@ class ModelWorker:
         payload = "\n\n".join(formatted)
         instructions = (
             "You are ranking financial and business news. Given the list of topics and candidate "
-            "articles, assign each article a relevance score between 0 and 1. Respond only with "
-            "JSON containing an array named 'scores'. Each item must include the keys 'index' "
-            "(int) and 'score' (float)."
+            "articles, assign each article a relevance score between 0 and 1. If you need "
+            "deliberation, wrap it in a <think> tag. Respond only with tags in the format "
+            "<scores><item index=\"N\">SCORE</item>...</scores>. Do not include any other text or "
+            "tags outside of <scores>."
         )
         user = (
             f"Topics: {topic_list}\n\n"
             "Articles:\n"
             f"{payload}\n\n"
-            "Return the JSON now."
+            "Return the tagged result now."
         )
         messages = [
             {"role": "system", "content": instructions},
@@ -143,6 +146,23 @@ class ModelWorker:
 
     @staticmethod
     def _parse_scores(text: str, count: int) -> Dict[str, float]:
+        cleaned = _strip_think_tags(text)
+        tag_scores = {}
+        summary_match = re.search(r"<scores>(.*?)</scores>", cleaned, flags=re.DOTALL | re.IGNORECASE)
+        if summary_match:
+            body = summary_match.group(1)
+            for match in re.finditer(
+                r"<item\s+index=\"(\d+)\">\s*([0-9]*\.?[0-9]+)\s*</item>",
+                body,
+                flags=re.DOTALL | re.IGNORECASE,
+            ):
+                idx = int(match.group(1))
+                score = float(match.group(2))
+                if 1 <= idx <= count:
+                    tag_scores[str(idx)] = score
+        if tag_scores:
+            return tag_scores
+        text = cleaned
         try:
             data = json.loads(text)
         except json.JSONDecodeError:
@@ -172,6 +192,23 @@ class ModelWorker:
 
     @staticmethod
     def _parse_summary(text: str) -> str:
+        cleaned = _strip_think_tags(text)
+        summary_match = re.search(r"<summary>(.*?)</summary>", cleaned, flags=re.DOTALL | re.IGNORECASE)
+        if summary_match:
+            body = summary_match.group(1)
+            sentences = [
+                match.group(1).strip()
+                for match in re.finditer(r"<item>(.*?)</item>", body, flags=re.DOTALL | re.IGNORECASE)
+                if match.group(1).strip()
+            ]
+            if sentences:
+                return "\n".join(sentences)
+            cleaned_body = re.sub(r"[ \t]{2,}", " ", body)
+            cleaned_body = re.sub(r"\s*\n\s*", "\n", cleaned_body)
+            cleaned_body = cleaned_body.strip()
+            if cleaned_body:
+                return cleaned_body
+        text = cleaned
         try:
             data = json.loads(text)
         except json.JSONDecodeError:
@@ -194,6 +231,10 @@ class ModelWorker:
         if not sentences:
             raise ValueError("Model response missing summary content")
         return "\n".join(sentences)
+
+
+def _strip_think_tags(text: str) -> str:
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
 
 
 __all__ = ["ModelWorker"]
