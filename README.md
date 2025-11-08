@@ -35,13 +35,16 @@ topics you supply.
    - `MODEL_NAME` – Hugging Face model id (default `Qwen/Qwen3-4B-Instruct-2507-FP8`).
    - `MODEL_QUANTIZATION` – Optional vLLM quantization argument (default `fp8`).
    - `MODEL_PORT` – internal port for the vLLM server (default `8001`).
+   - `MODEL_LOCAL_PATH` – absolute path to a directory containing `config.json`
+     and `.safetensors`/`.bin` weights. If unset the service looks for
+     `/models` and falls back to remote downloads when missing.
    - `FETCH_INTERVAL_SECONDS` – delay between RSS refresh cycles (default 1800).
    - `SUMMARY_MAX_CHARS` – maximum number of characters sent to the LLM for
      summarisation (default 4000).
-  - `VLLM_USE_TORCH_COMPILE` – set to `0` to disable PyTorch compilation if you
-    run on a host without a working compiler toolchain. The provided Docker
-    image includes the required build utilities so compilation is enabled by
-    default.
+   - `VLLM_USE_TORCH_COMPILE` – set to `0` to disable PyTorch compilation if you
+     run on a host without a working compiler toolchain. The provided Docker
+     image includes the required build utilities so compilation is enabled by
+     default.
 
 4. Start the service:
 
@@ -69,16 +72,35 @@ the canonical URL.
 
 ## Docker & Compose
 
-A CUDA-enabled Dockerfile and a Compose definition are provided for running the
-service on an NVIDIA host.
+A CUDA-enabled Dockerfile is provided alongside two example Compose definitions.
+Copy the variant that matches your deployment into `docker-compose.yaml` before
+starting the stack.
+
+### Remote model downloads
+
+Use `docker-compose.example.remote.yaml` to let vLLM download the model at
+startup:
 
 ```bash
+cp docker-compose.example.remote.yaml docker-compose.yaml
 docker compose up --build
 ```
 
-The container downloads the Qwen model on the first run. Subsequent launches
-reuse the cache stored inside the image layer. Only the application port
-configured via `PORT` is published.
+### Local model weights
+
+If you already have the Hugging Face repository on disk, mount it into the
+container and set `MODEL_LOCAL_PATH` to point at the mount (defaults to
+`/models`). The service will validate that the directory contains
+`config.json` and tensor weights before using it.
+
+```bash
+cp docker-compose.example.local.yaml docker-compose.yaml
+# assumes ./models contains the exported Hugging Face repository
+docker compose up --build
+```
+
+If the directory is missing or does not contain model weights the service falls
+back to downloading the model from Hugging Face.
 
 ## Architecture overview
 

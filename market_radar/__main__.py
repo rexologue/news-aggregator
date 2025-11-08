@@ -21,8 +21,21 @@ def main() -> None:
     )
     config = load_config()
 
+    if config.model_local_path and not config.using_local_model:
+        logging.warning(
+            "Local model path %s does not look like a valid Hugging Face model directory; "
+            "falling back to remote download",
+            config.model_local_path,
+        )
+
+    model_identifier = config.model_identifier
+    if config.using_local_model:
+        logging.info("Using local model weights from %s", model_identifier)
+    else:
+        logging.info("Using Hugging Face model %s", config.model_name)
+
     server_config = VLLMServerConfig(
-        model_name=config.model_name,
+        model_name=model_identifier,
         host=config.model_host,
         port=config.model_port,
         quantization=config.model_quantization,
@@ -31,7 +44,7 @@ def main() -> None:
     logging.info("Starting vLLM server for model %s", server_config.model_name)
     vllm_server.start()
 
-    model_worker = ModelWorker(vllm_server.base_url, config.model_name)
+    model_worker = ModelWorker(vllm_server.base_url, model_identifier)
     model_worker.start()
 
     root = Path(__file__).resolve().parent.parent
