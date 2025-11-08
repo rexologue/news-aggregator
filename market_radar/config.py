@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
+from typing import Optional
 import os
 
 
@@ -62,7 +63,8 @@ class AggregatorConfig:
     cleanup_interval_seconds: int = 3600
     retention_window: TimeWindowConfig = field(default_factory=TimeWindowConfig)
     cache_path: Path = Path("data/news_cache.json")
-    model_name: str = "Qwen/Qwen3-0.6B"
+    model_name: str = "Qwen/Qwen3-4B-Instruct-2507-FP8"
+    model_quantization: Optional[str] = "fp8"
     model_port: int = 8001
     model_host: str = "127.0.0.1"
     api_host: str = "0.0.0.0"
@@ -83,7 +85,8 @@ def load_config() -> AggregatorConfig:
     cleanup_interval = int(os.getenv("CLEANUP_INTERVAL_SECONDS", "3600"))
     retention = os.getenv("RETENTION_WINDOW", "7d")
     cache_path = Path(os.getenv("CACHE_PATH", "data/news_cache.json"))
-    model_name = os.getenv("MODEL_NAME", "Qwen/Qwen3-0.6B")
+    model_name = os.getenv("MODEL_NAME", "Qwen/Qwen3-4B-Instruct-2507-FP8")
+    model_quantization = os.getenv("MODEL_QUANTIZATION", "fp8") or None
     model_port = int(os.getenv("MODEL_PORT", "8001"))
     model_host = os.getenv("MODEL_HOST", "127.0.0.1")
     api_host = os.getenv("API_HOST", "0.0.0.0")
@@ -102,6 +105,7 @@ def load_config() -> AggregatorConfig:
         model_name=model_name,
         model_port=model_port,
         model_host=model_host,
+        model_quantization=model_quantization,
         api_host=api_host,
         api_port=api_port,
         summary_max_tokens=summary_max_tokens,

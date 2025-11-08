@@ -154,18 +154,15 @@ class ModelWorker:
         Parse a ranking from the model response.
 
         The model is instructed to return only article indices (1..count) in the
-        order of relevance. Here мы:
-
-        1. Удаляем <think>...</think>, если они есть.
-        2. Вытаскиваем все числа из текста в порядке появления.
-        3. Фильтруем по диапазону [1, count] и убираем дубликаты, сохраняя первый порядок.
-        4. Превращаем позиции в псевдо-скоры в диапазоне (0, 1], чтобы не ломать
-           внешний интерфейс Dict[str, float] (чем выше в списке, тем выше score).
+        order of relevance. We extract numbers from the response, filter them by
+        range, deduplicate while preserving order, and map their ranks to
+        pseudo-scores in the (0, 1] interval so the caller can keep using the
+        ``Dict[str, float]`` interface where higher scores mean higher
+        relevance.
         """
-        cleaned = _strip_think_tags(text)
-        cleaned = cleaned.strip()
+        cleaned = text.strip()
         if not cleaned:
-            raise ValueError("Model response is empty after stripping think tags")
+            raise ValueError("Model response is empty")
 
         # Попробуем на всякий случай выдернуть, если кто-то вдруг обернул в JSON
         # (но мы больше этого не требуем).
@@ -215,14 +212,10 @@ class ModelWorker:
 
     @staticmethod
     def _parse_summary(text: str) -> str:
-        """
-        Берём ответ модели, вырезаем <think>...</think>, приводим пробелы и переносы строк
-        к аккуратному виду и возвращаем текст сводки. Если модель неожиданно обернула
-        сводку в <summary>...</summary>, извлекаем содержимое, но это не обязательно.
-        """
-        cleaned = _strip_think_tags(text).strip()
+        """Normalize the model response and return the summary text."""
+        cleaned = text.strip()
         if not cleaned:
-            raise ValueError("Model response missing summary content (no <think> </think> tags!)")
+            raise ValueError("Model response missing summary content")
 
         # Поддержка старого формата <summary>...</summary>, если он вдруг встретится.
         summary_match = re.search(
@@ -243,20 +236,6 @@ class ModelWorker:
             raise ValueError("Model response missing summary content")
 
         return cleaned
-
-
-def _strip_think_tags(text: str) -> str:
-    """
-    Remove <think>...</think> blocks that the model may add for reasoning.
-
-    Если закрывающего тега </think> нет (генерация оборвалась), вырезаем всё
-    от <think> до конца строки/текста.
-    """
-    pattern = re.compile(
-        r"<think\b[^>]*>.*?(</think>|$)",
-        flags=re.DOTALL | re.IGNORECASE,
-    )
-    return pattern.sub("", text)
 
 
 __all__ = ["ModelWorker"]

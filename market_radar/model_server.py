@@ -17,6 +17,7 @@ class VLLMServerConfig:
     host: str
     port: int
     timeout_seconds: int = 900
+    quantization: str | None = None
 
 
 class VLLMServer:
@@ -44,6 +45,8 @@ class VLLMServer:
             "--port",
             str(self.config.port),
         ]
+        if self.config.quantization:
+            command.extend(["--quantization", self.config.quantization])
         env = os.environ.copy()
         env.setdefault("MKL_SERVICE_FORCE_INTEL", "1")
         self._process = subprocess.Popen(command, env=env)
