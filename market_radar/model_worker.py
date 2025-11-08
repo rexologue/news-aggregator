@@ -207,28 +207,14 @@ class ModelWorker:
             if cleaned_body:
                 return cleaned_body
         text = cleaned
-        try:
-            data = json.loads(text)
-        except json.JSONDecodeError:
-            start = text.find("{")
-            end = text.rfind("}")
-            if start == -1 or end == -1 or end <= start:
-                raise ValueError("Model response did not contain valid JSON summary")
-            data = json.loads(text[start : end + 1])
-        summary_raw = data.get("summary")
-        if isinstance(summary_raw, list):
-            sentences = [
-                sentence.strip()
-                for sentence in summary_raw
-                if isinstance(sentence, str) and sentence.strip()
-            ]
-        elif isinstance(summary_raw, str):
-            sentences = [summary_raw.strip()] if summary_raw.strip() else []
-        else:
-            sentences = []
-        if not sentences:
-            raise ValueError("Model response missing summary content")
-        return "\n".join(sentences)
+        fallback = re.sub(r"\s+", " ", cleaned).strip()
+        if fallback:
+            # Provide a graceful fallback for unexpected but well-formed plain text
+            # responses instead of insisting on JSON, which the current prompt no
+            # longer requests. This keeps legacy summaries usable while ensuring
+            # we remain tolerant to minor formatting deviations.
+            return fallback
+        raise ValueError("Model response missing summary content")
 
 
 def _strip_think_tags(text: str) -> str:
