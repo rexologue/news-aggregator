@@ -4,18 +4,16 @@ services:
   news-aggregator:
     build: .
     image: news-aggregator:latest
+    restart: unless-stopped
     ports:
       - "${PORT:-8080}:8080"
     environment:
       PORT: "${PORT:-8080}"
-      NVIDIA_VISIBLE_DEVICES: "6"     # ✅ правильный формат
-      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
-    restart: unless-stopped
+      MODEL_NAME: "${MODEL_NAME:-Qwen/Qwen3-4B-Instruct-2507-FP8}"
+      MODEL_QUANTIZATION: "${MODEL_QUANTIZATION:-fp8}"
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ["6"]       # ✅ конкретная GPU по ID
               capabilities: [gpu]
-

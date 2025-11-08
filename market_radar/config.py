@@ -67,6 +67,7 @@ class AggregatorConfig:
     model_quantization: Optional[str] = "fp8"
     model_port: int = 8001
     model_host: str = "127.0.0.1"
+    model_local_path: Optional[Path] = None
     api_host: str = "0.0.0.0"
     api_port: int = int(os.getenv("PORT", "8080"))
     summary_max_tokens: int = 768
@@ -76,6 +77,39 @@ class AggregatorConfig:
     @property
     def base_url(self) -> str:
         return f"http://{self.model_host}:{self.model_port}"
+
+    @property
+    def local_model_path(self) -> Optional[Path]:
+        """Return the local model path if it looks like a model directory."""
+
+        if not self.model_local_path:
+            return None
+
+        candidate = self.model_local_path.expanduser()
+        if not candidate.is_dir():
+            return None
+
+        config_file = candidate / "config.json"
+        has_safetensors = any(candidate.glob("*.safetensors"))
+        has_bin = any(candidate.glob("*.bin"))
+
+        if config_file.exists() and (has_safetensors or has_bin):
+            return candidate
+
+        return None
+
+    @property
+    def model_identifier(self) -> str:
+        """Return the identifier that should be passed to vLLM."""
+
+        local_path = self.local_model_path
+        if local_path is not None:
+            return str(local_path)
+        return self.model_name
+
+    @property
+    def using_local_model(self) -> bool:
+        return self.local_model_path is not None
 
 
 def load_config() -> AggregatorConfig:
@@ -94,6 +128,15 @@ def load_config() -> AggregatorConfig:
     summary_max_tokens = int(os.getenv("SUMMARY_MAX_TOKENS", "256"))
     rerank_max_tokens = int(os.getenv("RERANK_MAX_TOKENS", "512"))
     summary_max_chars = int(os.getenv("SUMMARY_MAX_CHARS", "4000"))
+    model_local_path_env = os.getenv("MODEL_LOCAL_PATH")
+    default_local_dir = Path("/models")
+    model_local_path: Optional[Path]
+    if model_local_path_env:
+        model_local_path = Path(model_local_path_env).expanduser()
+    elif default_local_dir.exists():
+        model_local_path = default_local_dir
+    else:
+        model_local_path = None
 
     retention_window = TimeWindowConfig(since=retention)
 
@@ -106,6 +149,7 @@ def load_config() -> AggregatorConfig:
         model_port=model_port,
         model_host=model_host,
         model_quantization=model_quantization,
+        model_local_path=model_local_path,
         api_host=api_host,
         api_port=api_port,
         summary_max_tokens=summary_max_tokens,
