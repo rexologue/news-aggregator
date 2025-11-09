@@ -19,6 +19,7 @@ class VLLMServerConfig:
     timeout_seconds: int = 900
     quantization: str | None = None
     gpu_memory_utilization: float | None = None
+    max_model_len: int | None = None
 
 
 class VLLMServer:
@@ -55,6 +56,8 @@ class VLLMServer:
                     str(self.config.gpu_memory_utilization),
                 ]
             )
+        if self.config.max_model_len is not None:
+            command.extend(["--max-model-len", str(self.config.max_model_len)])
         env = os.environ.copy()
         env.setdefault("MKL_SERVICE_FORCE_INTEL", "1")
         self._process = subprocess.Popen(command, env=env)

@@ -43,6 +43,8 @@ topics you supply.
      `/models` and falls back to remote downloads when missing.
    - `GPU_MEMORY_UTILIZATION` – fraction of each GPU's memory vLLM is allowed
      to allocate (default `0.9`).
+   - `MAX_MODEL_LEN` – hard cap for the model context length passed to vLLM
+     (default `53712`). Reduce this when running on GPUs with limited memory.
    - `FETCH_INTERVAL_SECONDS` – delay between RSS refresh cycles (default 1800).
    - `SUMMARY_MAX_CHARS` – maximum number of characters sent to the LLM for
      summarisation (default 4000).
