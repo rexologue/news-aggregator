@@ -41,6 +41,8 @@ topics you supply.
    - `MODEL_LOCAL_PATH` – absolute path to a directory containing `config.json`
      and `.safetensors`/`.bin` weights. If unset the service looks for
      `/models` and falls back to remote downloads when missing.
+   - `GPU_MEMORY_UTILIZATION` – fraction of each GPU's memory vLLM is allowed
+     to allocate (default `0.9`).
    - `FETCH_INTERVAL_SECONDS` – delay between RSS refresh cycles (default 1800).
    - `SUMMARY_MAX_CHARS` – maximum number of characters sent to the LLM for
      summarisation (default 4000).
