@@ -44,6 +44,7 @@ def main() -> None:
         host=config.model_host,
         port=config.model_port,
         quantization=config.model_quantization,
+        gpu_memory_utilization=config.gpu_memory_utilization,
     )
     vllm_server = VLLMServer(server_config)
     logging.info("Starting vLLM server for model %s", server_config.model_name)

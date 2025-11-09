@@ -11,6 +11,7 @@ services:
       PORT: "${PORT:-8080}"
       MODEL_VARIANT: "${MODEL_VARIANT:-fp8}"
       MODEL_LOCAL_PATH: "/models"
+      GPU_MEMORY_UTILIZATION: "${GPU_MEMORY_UTILIZATION:-0.9}"
     volumes:
       - ./models:/models:ro
     deploy:

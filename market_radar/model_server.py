@@ -18,6 +18,7 @@ class VLLMServerConfig:
     port: int
     timeout_seconds: int = 900
     quantization: str | None = None
+    gpu_memory_utilization: float | None = None
 
 
 class VLLMServer:
@@ -47,6 +48,13 @@ class VLLMServer:
         ]
         if self.config.quantization:
             command.extend(["--quantization", self.config.quantization])
+        if self.config.gpu_memory_utilization is not None:
+            command.extend(
+                [
+                    "--gpu-memory-utilization",
+                    str(self.config.gpu_memory_utilization),
+                ]
+            )
         env = os.environ.copy()
         env.setdefault("MKL_SERVICE_FORCE_INTEL", "1")
         self._process = subprocess.Popen(command, env=env)
