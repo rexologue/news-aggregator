@@ -83,6 +83,7 @@ class AggregatorConfig:
     model_host: str = "127.0.0.1"
     model_local_path: Optional[Path] = None
     gpu_memory_utilization: Optional[float] = None
+    max_model_len: Optional[int] = None
     api_host: str = "0.0.0.0"
     api_port: int = int(os.getenv("PORT", "8080"))
     summary_max_tokens: int = 768
@@ -190,11 +191,18 @@ def load_config() -> AggregatorConfig:
     summary_max_chars = int(os.getenv("SUMMARY_MAX_CHARS", "4000"))
     model_local_path_env = os.getenv("MODEL_LOCAL_PATH")
     gpu_memory_utilization_env = os.getenv("GPU_MEMORY_UTILIZATION")
+    max_model_len_env = os.getenv("MAX_MODEL_LEN")
     gpu_memory_utilization: Optional[float]
     if gpu_memory_utilization_env is not None:
         gpu_memory_utilization = float(gpu_memory_utilization_env)
     else:
         gpu_memory_utilization = None
+    max_model_len: Optional[int]
+    if max_model_len_env is not None:
+        max_model_len = int(max_model_len_env)
+    else:
+        max_model_len = None
+
     default_local_dir = Path("/models")
     model_local_path: Optional[Path]
     if model_local_path_env:
@@ -223,6 +231,7 @@ def load_config() -> AggregatorConfig:
         rerank_max_tokens=rerank_max_tokens,
         summary_max_chars=summary_max_chars,
         gpu_memory_utilization=gpu_memory_utilization,
+        max_model_len=max_model_len,
     )
 
 
