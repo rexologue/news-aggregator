@@ -33,6 +33,11 @@ def main() -> None:
         logging.info("Using local model weights from %s", model_identifier)
     else:
         logging.info("Using Hugging Face model %s", config.model_name)
+    logging.info(
+        "Model variant: %s (quantization: %s)",
+        config.model_variant,
+        config.model_quantization or "disabled",
+    )
 
     server_config = VLLMServerConfig(
         model_name=model_identifier,

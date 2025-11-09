@@ -9,6 +9,7 @@ services:
       - "${PORT:-8080}:8080"
     environment:
       PORT: "${PORT:-8080}"
+      MODEL_VARIANT: "${MODEL_VARIANT:-fp8}"
       MODEL_NAME: "${MODEL_NAME:-Qwen/Qwen3-4B-Instruct-2507-FP8}"
       MODEL_QUANTIZATION: "${MODEL_QUANTIZATION:-fp8}"
     deploy:

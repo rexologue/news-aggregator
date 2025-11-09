@@ -11,8 +11,8 @@ topics you supply.
   normalises articles from the configured agencies. Items older than one week
   are automatically discarded. 【F:market_radar/fetching.py†L1-L288】
 - **LLM-powered summaries** – A dedicated worker thread interacts with a local
-  vLLM server hosting `Qwen/Qwen3-4B-Instruct-2507-FP8` to produce concise,
-  neutral summaries.
+  vLLM server hosting one of the Qwen 3 4B instruct checkpoints (FP8 or full
+  precision) to produce concise, neutral summaries.
 - **Topic-aware reranking** – For every request the service asks the same model
   to score news items against the provided topics and returns the highest scoring
   reports.
@@ -32,6 +32,9 @@ topics you supply.
 3. Export the environment variables you want to tweak (all optional):
 
    - `PORT` – HTTP port for the FastAPI service (default `8080`).
+   - `MODEL_VARIANT` – Shortcut for switching between `fp8` and
+     `Qwen/Qwen3-4B-Instruct-2507` full precision weights (`base`). When set it
+     overrides `MODEL_NAME`/`MODEL_QUANTIZATION`.
    - `MODEL_NAME` – Hugging Face model id (default `Qwen/Qwen3-4B-Instruct-2507-FP8`).
    - `MODEL_QUANTIZATION` – Optional vLLM quantization argument (default `fp8`).
    - `MODEL_PORT` – internal port for the vLLM server (default `8001`).

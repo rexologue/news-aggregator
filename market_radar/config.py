@@ -55,6 +55,19 @@ class FetcherConfig:
     feed_retries: int = 2
 
 
+def _looks_like_model_dir(path: Path) -> bool:
+    """Return True if the given directory resembles a Hugging Face model export."""
+
+    if not path.is_dir():
+        return False
+
+    config_file = path / "config.json"
+    has_safetensors = any(path.glob("*.safetensors"))
+    has_bin = any(path.glob("*.bin"))
+
+    return config_file.exists() and (has_safetensors or has_bin)
+
+
 @dataclass
 class AggregatorConfig:
     """Top-level configuration for the service."""
@@ -65,6 +78,7 @@ class AggregatorConfig:
     cache_path: Path = Path("data/news_cache.json")
     model_name: str = "Qwen/Qwen3-4B-Instruct-2507-FP8"
     model_quantization: Optional[str] = "fp8"
+    model_variant: str = "fp8"
     model_port: int = 8001
     model_host: str = "127.0.0.1"
     model_local_path: Optional[Path] = None
@@ -86,15 +100,21 @@ class AggregatorConfig:
             return None
 
         candidate = self.model_local_path.expanduser()
-        if not candidate.is_dir():
-            return None
-
-        config_file = candidate / "config.json"
-        has_safetensors = any(candidate.glob("*.safetensors"))
-        has_bin = any(candidate.glob("*.bin"))
-
-        if config_file.exists() and (has_safetensors or has_bin):
+        if _looks_like_model_dir(candidate):
             return candidate
+
+        # Allow pointing to a parent directory that contains named subfolders.
+        model_dir_name = self.model_name.split("/")[-1]
+        nested_candidate = candidate / model_dir_name
+        if _looks_like_model_dir(nested_candidate):
+            return nested_candidate
+
+        # Some local exports may omit the quantisation suffix.
+        if model_dir_name.endswith("-FP8"):
+            alt_name = model_dir_name[:-4]
+            alt_candidate = candidate / alt_name
+            if _looks_like_model_dir(alt_candidate):
+                return alt_candidate
 
         return None
 
@@ -112,6 +132,46 @@ class AggregatorConfig:
         return self.local_model_path is not None
 
 
+def _resolve_model_settings() -> tuple[str, Optional[str], str]:
+    """Resolve the desired model name/quantisation from environment variables."""
+
+    variant_env = os.getenv("MODEL_VARIANT")
+    presets = {
+        "fp8": ("Qwen/Qwen3-4B-Instruct-2507-FP8", "fp8"),
+        "instruct": ("Qwen/Qwen3-4B-Instruct-2507", None),
+        "base": ("Qwen/Qwen3-4B-Instruct-2507", None),
+    }
+
+    if variant_env:
+        key = variant_env.strip().lower()
+        if key not in presets:
+            raise ValueError(
+                "Unsupported MODEL_VARIANT value. Available options: "
+                + ", ".join(sorted(presets))
+            )
+        name, quant = presets[key]
+        return name, quant, key
+
+    model_name_env = os.getenv("MODEL_NAME")
+    if model_name_env:
+        model_name = model_name_env
+        quant_env = os.getenv("MODEL_QUANTIZATION")
+        model_quantization = quant_env or None
+    else:
+        model_name = "Qwen/Qwen3-4B-Instruct-2507-FP8"
+        model_quantization = os.getenv("MODEL_QUANTIZATION", "fp8") or None
+
+    variant = "fp8"
+    if model_quantization and model_quantization.lower() != "fp8":
+        variant = model_quantization.lower()
+    elif not model_quantization:
+        variant = "instruct"
+    elif not model_name.lower().endswith("-fp8"):
+        variant = "instruct"
+
+    return model_name, model_quantization, variant
+
+
 def load_config() -> AggregatorConfig:
     """Load configuration from environment variables with sensible defaults."""
 
@@ -119,8 +179,7 @@ def load_config() -> AggregatorConfig:
     cleanup_interval = int(os.getenv("CLEANUP_INTERVAL_SECONDS", "3600"))
     retention = os.getenv("RETENTION_WINDOW", "7d")
     cache_path = Path(os.getenv("CACHE_PATH", "data/news_cache.json"))
-    model_name = os.getenv("MODEL_NAME", "Qwen/Qwen3-4B-Instruct-2507-FP8")
-    model_quantization = os.getenv("MODEL_QUANTIZATION", "fp8") or None
+    model_name, model_quantization, model_variant = _resolve_model_settings()
     model_port = int(os.getenv("MODEL_PORT", "8001"))
     model_host = os.getenv("MODEL_HOST", "127.0.0.1")
     api_host = os.getenv("API_HOST", "0.0.0.0")
@@ -149,6 +208,7 @@ def load_config() -> AggregatorConfig:
         model_port=model_port,
         model_host=model_host,
         model_quantization=model_quantization,
+        model_variant=model_variant,
         model_local_path=model_local_path,
         api_host=api_host,
         api_port=api_port,
