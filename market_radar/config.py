@@ -89,6 +89,7 @@ class AggregatorConfig:
     summary_max_tokens: int = 768
     rerank_max_tokens: int = 512
     summary_max_chars: int = 10000
+    advice_max_tokens: int = 512
 
     @property
     def base_url(self) -> str:
@@ -189,6 +190,7 @@ def load_config() -> AggregatorConfig:
     summary_max_tokens = int(os.getenv("SUMMARY_MAX_TOKENS", "256"))
     rerank_max_tokens = int(os.getenv("RERANK_MAX_TOKENS", "512"))
     summary_max_chars = int(os.getenv("SUMMARY_MAX_CHARS", "4000"))
+    advice_max_tokens = int(os.getenv("ADVICE_MAX_TOKENS", "512"))
     model_local_path_env = os.getenv("MODEL_LOCAL_PATH")
     gpu_memory_utilization_env = os.getenv("GPU_MEMORY_UTILIZATION")
     max_model_len_env = os.getenv("MAX_MODEL_LEN")
@@ -230,6 +232,7 @@ def load_config() -> AggregatorConfig:
         summary_max_tokens=summary_max_tokens,
         rerank_max_tokens=rerank_max_tokens,
         summary_max_chars=summary_max_chars,
+        advice_max_tokens=advice_max_tokens,
         gpu_memory_utilization=gpu_memory_utilization,
         max_model_len=max_model_len,
     )
