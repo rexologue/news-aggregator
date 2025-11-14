@@ -204,6 +204,12 @@ class NewsAggregator:
         scored.sort(key=lambda item: item[0], reverse=True)
         return [report for _, report in scored[:top_n]]
 
+    def generate_financial_advice(self, payload_json: str) -> str:
+        """Use the model worker to produce structured financial advice."""
+
+        max_tokens = getattr(self.config, "advice_max_tokens", 512)
+        return self.model_worker.financial_advice(payload_json, max_tokens)
+
     def _load_cached_reports(self) -> None:
         if not self._cache_path.exists():
             return

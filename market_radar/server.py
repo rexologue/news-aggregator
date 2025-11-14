@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from fastapi import Depends, FastAPI, HTTPException
+import json
+
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import ValidationError
 
 from .service import NewsAggregator
-from .schemas import RankingRequest, ReportResponse, RebuildResponse
+from .schemas import AdvicePayload, RankingRequest, ReportResponse, RebuildResponse
 
 
 def create_app(aggregator: NewsAggregator) -> FastAPI:
@@ -39,6 +42,40 @@ def create_app(aggregator: NewsAggregator) -> FastAPI:
     def rebuild_reports(service: NewsAggregator = Depends(get_aggregator)) -> RebuildResponse:
         rebuilt = service.rebuild_reports()
         return RebuildResponse(rebuilt=rebuilt)
+
+    @app.post("/advice", response_model=AdvicePayload)
+    async def generate_advice(
+        request: Request, service: NewsAggregator = Depends(get_aggregator)
+    ) -> AdvicePayload:
+        raw_body = await request.body()
+        raw_text = raw_body.decode("utf-8")
+        if not raw_text.strip():
+            raise HTTPException(status_code=400, detail="Request body must not be empty")
+        try:
+            payload_dict = json.loads(raw_text)
+        except json.JSONDecodeError as exc:  # pragma: no cover - invalid input
+            raise HTTPException(status_code=400, detail="Request body must be valid JSON") from exc
+        try:
+            AdvicePayload.parse_obj(payload_dict)
+        except ValidationError as exc:
+            raise HTTPException(status_code=400, detail="Invalid advice payload") from exc
+
+        try:
+            model_response = service.generate_financial_advice(raw_text)
+        except Exception as exc:  # pragma: no cover - LLM/network failures
+            raise HTTPException(status_code=502, detail="Failed to generate advice") from exc
+
+        try:
+            advice_json = json.loads(model_response)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail="Model returned invalid JSON") from exc
+
+        try:
+            validated_output = AdvicePayload.parse_obj(advice_json)
+        except ValidationError as exc:
+            raise HTTPException(status_code=400, detail="Model returned malformed payload") from exc
+
+        return validated_output
 
     return app
 

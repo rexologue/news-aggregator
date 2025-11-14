@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List
+from typing import Dict, List
 
 from pydantic import BaseModel, Field, validator
 
@@ -50,4 +50,25 @@ class RebuildResponse(BaseModel):
     )
 
 
-__all__ = ["RankingRequest", "ReportResponse", "RebuildResponse"]
+class AdvicePayload(BaseModel):
+    earnings: float = Field(..., description="Total earnings for the previous month")
+    wastes: Dict[str, float] = Field(
+        ..., description="Expense categories mapped to previous spending amounts"
+    )
+    wishes: str = Field(..., description="User request for adjusting next month's spending")
+
+    @validator("wastes")
+    def validate_wastes(cls, value: Dict[str, float]) -> Dict[str, float]:
+        if not isinstance(value, dict):
+            raise ValueError("wastes must be an object with numeric values")
+        validated: Dict[str, float] = {}
+        for key, amount in value.items():
+            if not isinstance(key, str) or not key.strip():
+                raise ValueError("wastes keys must be non-empty strings")
+            if not isinstance(amount, (int, float)):
+                raise ValueError("wastes values must be numeric")
+            validated[key] = float(amount)
+        return validated
+
+
+__all__ = ["RankingRequest", "ReportResponse", "RebuildResponse", "AdvicePayload"]

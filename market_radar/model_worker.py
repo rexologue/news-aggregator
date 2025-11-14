@@ -148,6 +148,29 @@ class ModelWorker:
         response = self._submit(messages, max_tokens=max_tokens, temperature=0.1)
         return self._parse_scores(response, len(items))
 
+    def financial_advice(self, payload_json: str, max_tokens: int) -> str:
+        """Generate revised spending recommendations from the LLM."""
+
+        system_message = (
+            "You are a financial-advice assistant.\n"
+            "You receive JSON data describing a user’s last-month earnings, "
+            "last-month expenses, and a natural-language request describing "
+            "how the user wants to adjust their spending next month.\n"
+            "Your task is to produce a JSON object with the exact same "
+            "structure as the input, but with the “wastes” fields replaced "
+            "with recommended spending amounts for next month.\n"
+            "Do not add new fields. Do not modify the structure. Only adjust "
+            "numeric values in “wastes”.\n"
+            "Base your recommendations strictly on the provided earnings, "
+            "expenses, and the user’s wishes.\n"
+            "Output only valid JSON."
+        )
+        messages = [
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": payload_json},
+        ]
+        return self._submit(messages, max_tokens=max_tokens, temperature=0.2)
+
     @staticmethod
     def _parse_scores(text: str, count: int) -> Dict[str, float]:
         """
