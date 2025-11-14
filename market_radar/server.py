@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
 
@@ -61,7 +62,9 @@ def create_app(aggregator: NewsAggregator) -> FastAPI:
             raise HTTPException(status_code=400, detail="Invalid advice payload") from exc
 
         try:
-            model_response = service.generate_financial_advice(raw_text)
+            model_response = await run_in_threadpool(
+                service.generate_financial_advice, raw_text
+            )
         except Exception as exc:  # pragma: no cover - LLM/network failures
             raise HTTPException(status_code=502, detail="Failed to generate advice") from exc
 
