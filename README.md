@@ -62,20 +62,113 @@ topics you supply.
 The process launches the vLLM server, waits for it to finish downloading the
 model, starts the summarisation worker, and finally exposes the FastAPI app.
 
-### Querying the API
+### API reference
 
-Send a POST request to `/news` with a JSON body containing the topics list and
-the number of articles you want back:
+The service exposes a small FastAPI application whose schema is described in
+[`swagger.yml`](swagger.yml). Below are practical examples that mirror the
+behaviour of the deployed API.
+
+#### `POST /news`
+
+Request summarised, reranked news reports for a list of topics. The `topics`
+field accepts questions or themes (they are normalised before being sent to the
+LLM) and `top_n` limits the amount of news to return.
 
 ```bash
-curl -X POST "http://localhost:8080/news" \
+curl -X POST http://localhost:8080/news \
   -H "Content-Type: application/json" \
-  -d '{"topics": ["inflation", "bank earnings"], "top_n": 5}'
+  -d '{
+        "topics": ["inflation", "bank earnings"],
+        "top_n": 3
+      }'
 ```
 
-The response is an array of reports where each entry contains the agency id,
-title, summary, base64-encoded image (if available), publication timestamp, and
-the canonical URL.
+Sample response:
+
+```json
+[
+  {
+    "agency": "reuters",
+    "title": "Fed signals patience as inflation cools",
+    "summary": "Federal Reserve officials flagged a cautious approach to rate cuts after new inflation data showed progress toward the bank's 2% target.",
+    "image_base64": null,
+    "url": "https://www.reuters.com/markets/us/fed-patience-inflation",
+    "published_at": "2024-08-10T12:30:00Z",
+    "crawled_at": "2024-08-10T12:31:12Z"
+  },
+  {
+    "agency": "bloomberg",
+    "title": "US banks see earnings rebound as provisions shrink",
+    "summary": "Major banks reported stronger quarterly profits thanks to lower credit-loss provisions and resilient consumer lending.",
+    "image_base64": null,
+    "url": "https://www.bloomberg.com/news/articles/bank-earnings-rebound",
+    "published_at": "2024-08-09T09:15:00Z",
+    "crawled_at": "2024-08-09T09:17:44Z"
+  }
+]
+```
+
+Each entry contains the RSS agency identifier, optional headline, LLM summary,
+Base64-encoded lead image, publication timestamp reported by the source, and the
+internal crawl timestamp.
+
+#### `POST /reports/rebuild`
+
+Force the service to rebuild its cached summaries from the currently retained
+RSS entries. This is useful when you change summarisation limits or want to
+reseed the cache after importing historical feeds.
+
+```bash
+curl -X POST http://localhost:8080/reports/rebuild
+```
+
+Sample response:
+
+```json
+{ "rebuilt": 152 }
+```
+
+The `rebuilt` value indicates how many reports are currently ready to be served
+through `/news`.
+
+#### `POST /advice`
+
+The advice endpoint accepts structured financial inputs, forwards them to the
+LLM for additional analysis, and returns a validated payload. It is meant for
+turning natural-language wishes into consistent budgeting recommendations.
+
+```bash
+curl -X POST http://localhost:8080/advice \
+  -H "Content-Type: application/json" \
+  -d '{
+        "earnings": 5400,
+        "wastes": {
+          "rent": 2200,
+          "groceries": 650,
+          "dining": 400,
+          "travel": 250
+        },
+        "wishes": "Reduce dining but leave budget for one weekend getaway"
+      }'
+```
+
+Sample response:
+
+```json
+{
+  "earnings": 5400,
+  "wastes": {
+    "rent": 2200,
+    "groceries": 600,
+    "dining": 300,
+    "travel": 350
+  },
+  "wishes": "Prioritise savings without cancelling all leisure travel"
+}
+```
+
+Validation errors return a `400` status code with a JSON body containing a
+`detail` message. Internal model failures surface as `502` responses.
 
 ## Docker & Compose
 
