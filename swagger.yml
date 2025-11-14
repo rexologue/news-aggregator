@@ -12,6 +12,10 @@ paths:
   /news:
     post:
       summary: Fetch top news reports for the requested topics
+      description: |
+        Accepts a list of high-level topics or questions and returns the most relevant
+        news reports discovered during the past seven days. Articles are summarised
+        and ranked by the LLM before being returned to the caller.
       operationId: fetchNews
       requestBody:
         required: true
@@ -21,6 +25,7 @@ paths:
               $ref: '#/components/schemas/RankingRequest'
             examples:
               default:
+                summary: Request the five best articles for a pair of topics
                 value:
                   topics:
                     - inflation
@@ -35,6 +40,32 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/ReportResponse'
+              examples:
+                sample:
+                  summary: Example response with two summarised news reports
+                  value:
+                    - agency: reuters
+                      title: Fed signals patience as inflation cools
+                      summary: >-
+                        Federal Reserve officials flagged a cautious approach to rate
+                        cuts after new inflation data showed progress toward the
+                        bank's 2% target. Analysts expect the first cut no earlier
+                        than December.
+                      image_base64: null
+                      url: https://www.reuters.com/markets/us/fed-patience-inflation
+                      published_at: 2024-08-10T12:30:00Z
+                      crawled_at: 2024-08-10T12:31:12Z
+                    - agency: bloomberg
+                      title: US banks see earnings rebound as provisions shrink
+                      summary: >-
+                        Major banks reported stronger quarterly profits thanks to
+                        lower credit-loss provisions and resilient consumer lending.
+                        Executives warned that margin pressure could re-emerge if
+                        the Fed cuts rates aggressively.
+                      image_base64: null
+                      url: https://www.bloomberg.com/news/articles/bank-earnings-rebound
+                      published_at: 2024-08-09T09:15:00Z
+                      crawled_at: 2024-08-09T09:17:44Z
         '400':
           description: Invalid request payload
           content:
@@ -44,6 +75,10 @@ paths:
   /reports/rebuild:
     post:
       summary: Trigger rebuilding the cached reports
+      description: |
+        Clears any cached summaries and reprocesses the latest RSS entries using the
+        current model settings. Use this endpoint after changing summarisation limits
+        or seeding the service with new historical data.
       operationId: rebuildReports
       responses:
         '200':
@@ -52,6 +87,63 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RebuildResponse'
+              examples:
+                sample:
+                  value:
+                    rebuilt: 152
+  /advice:
+    post:
+      summary: Generate JSON-formatted financial advice from spending inputs
+      description: |
+        Passes the provided earnings, spending categories and free-form wishes to the
+        LLM and returns a validated `AdvicePayload`. This endpoint is primarily used
+        by the UI to turn budgeting requests into structured recommendations.
+      operationId: generateAdvice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdvicePayload'
+            examples:
+              default:
+                value:
+                  earnings: 5400
+                  wastes:
+                    rent: 2200
+                    groceries: 650
+                    dining: 400
+                    travel: 250
+                  wishes: Reduce dining but leave budget for one weekend getaway
+      responses:
+        '200':
+          description: JSON structure containing normalised earnings, wastes and wishes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdvicePayload'
+              examples:
+                sample:
+                  value:
+                    earnings: 5400
+                    wastes:
+                      rent: 2200
+                      groceries: 600
+                      dining: 300
+                      travel: 350
+                    wishes: Prioritise savings without cancelling all leisure travel
+        '400':
+          description: Invalid request payload or model output
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Upstream model failure while generating advice
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   schemas:
     RankingRequest:
@@ -122,3 +214,24 @@ components:
         detail:
           type: string
           description: Human-readable explanation of the validation error
+    AdvicePayload:
+      type: object
+      required:
+        - earnings
+        - wastes
+        - wishes
+      properties:
+        earnings:
+          type: number
+          format: float
+          description: Total earnings for the previous month
+          minimum: 0
+        wastes:
+          type: object
+          description: Expense categories mapped to previous spending amounts
+          additionalProperties:
+            type: number
+            format: float
+        wishes:
+          type: string
+          description: User request for adjusting next month's spending
